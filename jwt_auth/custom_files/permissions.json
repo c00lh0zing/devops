@@ -1,0 +1,92 @@
+[
+    {
+      "form_name": "Телефонные аппараты",
+      "form_code": "Telephones",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Шаблоны",
+      "form_code": "Templates",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Параметры",
+      "form_code": "Params",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Группы",
+      "form_code": "Groups",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Аудит",
+      "form_code": "Audit",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Загрузки",
+      "form_code": "Load",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Пользователи",
+      "form_code": "Users",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Роли",
+      "form_code": "Roles",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    },
+    {
+      "form_name": "Доступы",
+      "form_code": "permissions",
+      "permission": {
+        "read": "Чтение",
+        "create": "Создание",
+        "edit": "Редактирование",
+        "delete": "Удаление"
+      }
+    }
+  ]
