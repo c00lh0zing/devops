@@ -1,0 +1,8 @@
+NEXUS_ARTIFACT_ID = "CI08137124"
+NEXUS_URL = "https://nexus-ci.delta.sbrf.ru"
+NEXUS_CD_REPOSITORY = "maven-distr"
+NEXUS_GROUP_ID = "CI00377836"
+NEXUS_CREDENTIAL_ID = "cab-sa-dvo06175_AD"
+DOMEN_PREFIX = "delta.sbrf.ru"
+SSH_USER = "CI01940378-lnx-telcmdb"
+LOCAL_USER= "telcmdb-ift"
