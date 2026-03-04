@@ -1,0 +1,13 @@
+[Unit]
+Description=Activation
+
+[Service]
+Type=simple
+Restart=on-failure
+KillMode=control-group
+ExecStart=/opt/provisioning/activation/bin/activation -c /opt/provisioning/activation/env/.env
+RestartSec=10s
+TimeoutSec=0
+
+[Install]
+WantedBy=default.target
