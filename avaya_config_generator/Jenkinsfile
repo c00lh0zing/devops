@@ -1,0 +1,249 @@
+@Library(['Prov_devops_Library@master']) _
+
+def sberchatReport(status, text) {
+    def data = [
+    'peer': 'ca8416a4b5ff11ee',
+    'status': status,
+    'text': text.bytes.encodeBase64().toString(),
+    'url': "${BUILD_URL}"
+    ]
+    String json = writeJSON returnText: true, json: data
+    httpRequest httpMode: 'POST',  url: "https://sbt-qa-jenkins.delta.sbrf.ru/sberchatbot", requestBody:  json
+}
+
+pipeline {
+    agent {
+        node {
+            label 'masterLin'
+        }
+    }
+
+    parameters {
+      mavenMetadataVersions (artifactId: "CI05239972",
+        classifier: '',
+        credentialsId: 'maven_artifact_list_cred_secret',
+        currentArtifactInfoLabel: '',
+        currentArtifactInfoPattern: '',
+        currentArtifactInfoUrl: '',
+        defaultValue: '',
+        description: 'Выбор версии дистрибутива',
+        groupId: "CI00377836",
+        maxVersions: '160',
+        name: 'DISTR_NAME',
+        packaging: 'zip',
+        repoBaseUrl: 'https://nexus-ci.delta.sbrf.ru/repository/maven-distr',
+        sortOrder: 'DESC',
+        versionFilter: '')
+        choice(name: 'DEST_HOST', choices: ['10.55.55.230', '10.53.247.213', '10.141.17.78', '10.141.17.132'], description: "IP адрес хоста деплоя")
+        booleanParam(name: 'SberChat', defaultValue: true, description: 'Отправить уведомление')
+        booleanParam(name: 'Deploy_to_Autotest', defaultValue: true, description: 'Деплой на Autotest (при успешном выполнении джобы)')
+        booleanParam(name: 'Deploy_to_DEV_SVPL', defaultValue: true, description: 'Деплой на DEV_SVPL (при успешном выполнении джобы)')
+    }
+
+    options {
+        ansiColor('xterm')
+    }
+    
+    environment {
+        NODEJS_HOME = tool name: "node-22.5.1", type: 'nodejs'
+    }
+
+    stages {
+
+        // Такая всратая конструкция получения имени проекта, по причине того, что длинна пути на разных нодах отличается. Разворачиваем строку, берем перввый каталог и ревертим обратно.
+        stage('Get distr_name') {
+            steps {
+               script {
+                println("Get prj name")
+                    DISTR_NAME = DISTR_NAME_VERSION.split("_")[0].split("D-")[1]
+                    echo "Show distr name: ${DISTR_NAME}"          
+               }
+            }
+        }
+/*
+        stage('Get project name') {
+            steps {
+               script {
+                println("Get prj name")
+                    PRJ_NAME = sh (
+                        script: 'pwd',
+                        returnStdout: true
+                    )reverse().split("/")[0].reverse().trim()
+                    echo "Show project name: ${PRJ_NAME}"          
+               }
+            }
+        }
+*/
+        stage('Get project name') {
+            steps {
+               script {
+                println("Get prj name")
+                    PRJ_NAME = DISTR_NAME_VERSION.split(/[0-9]_/)[1]
+                    echo "Show project name: ${PRJ_NAME}"          
+               }
+            }
+        }
+
+
+        stage('Determine version') {
+            steps {
+                script {
+                        currentBuild.displayName = "${DISTR_NAME}"
+                }
+            }
+        }
+
+        stage('Load prj param') {
+          steps {
+            load "./$PRJ_NAME/prjparam.groovy"
+          }
+        }
+
+        stage('Make env file') {
+            steps {
+               script {
+                withCredentials([
+                        string(credentialsId: 'AUTH_CREDENTIALS', variable: 'AUTH_CREDENTIALS_PASSWORD')
+                        ]){
+                            sh """  
+                            mv -f ./$PRJ_NAME/.env_template ./$PRJ_NAME/.env
+                            echo "START SED"
+                            sed -i 's/AUTH_CREDENTIALS__PASSWORD=/AUTH_CREDENTIALS__PASSWORD=${AUTH_CREDENTIALS_PASSWORD}/g' ${PRJ_NAME}/.env
+                            echo "STOP SED"
+                            ls -la
+                            ls -la $PRJ_NAME 
+                            cat ./$PRJ_NAME/.env  
+                            """         
+                        }
+                }
+            }
+        }
+
+        stage('Nexus CD Download') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(
+                            credentialsId: "${NEXUS_CREDENTIAL_ID}",
+                            usernameVariable: 'USER',
+                            passwordVariable: 'PWD')]) {
+                        def distrib_url = "${NEXUS_URL}/repository/" +
+                                "${NEXUS_CD_REPOSITORY}/" +
+                                "${NEXUS_GROUP_ID}/" +
+                                "${NEXUS_ARTIFACT_ID}/" +
+                                "D-${DISTR_NAME}_${PRJ_NAME}/" +
+                                "${NEXUS_ARTIFACT_ID}-D-${DISTR_NAME}_${PRJ_NAME}-distrib.zip"
+                        sh "curl -v -u '${USER}@${DOMEN_PREFIX}:${PWD}' -o distrib.zip ${distrib_url}"
+                        currentBuild.description = """ Nexus ver: <a href="${distrib_url}">${DISTR_NAME}</a> """
+                        sh "unzip distrib.zip"
+                        sh "ls -la dist"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy: stop service') {
+            steps {
+                sshagent(['TYZ_SSH']) {
+                sh """
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} "ip a;hostname"
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} 'sudo -u $LOCAL_USER bash -l -c "[[ -f /home/$LOCAL_USER/.config/systemd/user/${PRJ_NAME}.service ]] && systemctl --user status|| true"'
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} 'sudo -u $LOCAL_USER bash -l -c "[[ -f /home/$LOCAL_USER/.config/systemd/user/${PRJ_NAME}.service ]] && systemctl --user stop $PRJ_NAME|| true"'
+                """
+                }
+            }
+        }
+
+        stage('Deploy: copy files') {
+            steps {
+                sshagent(['TYZ_SSH']) {
+                sh """
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} sudo -u $LOCAL_USER mkdir -p /opt/provisioning/$PRJ_NAME/{env,bin,log,tmp}
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} sudo -u $LOCAL_USER chmod 777 -R /opt/provisioning/$PRJ_NAME
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} sudo -u $LOCAL_USER cp /opt/provisioning/$PRJ_NAME/env/.env /opt/provisioning/$PRJ_NAME/env/.env_`date +"%Y%m%d_%H%M"` | true
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} sudo -u $LOCAL_USER cp /opt/provisioning/$PRJ_NAME/bin/$PRJ_NAME /opt/provisioning/$PRJ_NAME/bin/${PRJ_NAME}_`date +"%Y%m%d_%H%M"` | true
+                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ./dist/$PRJ_NAME ${SSH_USER}@${DEST_HOST}:/opt/provisioning/$PRJ_NAME/bin/
+                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ./$PRJ_NAME/.env ${SSH_USER}@${DEST_HOST}:/opt/provisioning/$PRJ_NAME/env/
+                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ./$PRJ_NAME/*.service ${SSH_USER}@${DEST_HOST}:/opt/provisioning/$PRJ_NAME/tmp/
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} sudo -u $LOCAL_USER sudo /usr/bin/chown -R $LOCAL_USER:$LOCAL_USER /opt/provisioning
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} sudo -u $LOCAL_USER cp /opt/provisioning/$PRJ_NAME/tmp/*.service /home/$LOCAL_USER/.config/systemd/user/
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} sudo -u $LOCAL_USER chmod 755 -R /opt/provisioning/$PRJ_NAME
+                """
+                }
+            }
+        }
+
+        stage('Deploy: custom task') {
+            steps {
+                load "./$PRJ_NAME/custom_task.groovy"
+            }
+        }
+
+        stage('Deploy: start service') {
+            steps {
+                sshagent(['TYZ_SSH']) {
+                sh """
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} 'sudo -u $LOCAL_USER bash -l -c "systemctl --user daemon-reload"'
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} 'sudo -u $LOCAL_USER bash -l -c "systemctl --user enable $PRJ_NAME | true"'
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} 'sudo -u $LOCAL_USER bash -l -c "systemctl --user start $PRJ_NAME"'
+                """
+                }
+            }
+        }
+
+        stage('Deploy: status service') {
+            steps {
+                sshagent(['TYZ_SSH']) {
+                sh """
+                sleep 10
+                ssh -o StrictHostKeyChecking=no -l ${SSH_USER} ${DEST_HOST} 'sudo -u $LOCAL_USER bash -l -c "systemctl --user status $PRJ_NAME"'
+                """
+                }
+            }
+        }
+        
+        stage('Confluence: set version') {
+            steps {
+                dir('helpers') {
+                    script {
+                        setConfluenceVersion("${env.NODEJS_HOME}", "IFT", "${PRJ_NAME}", "${DISTR_NAME}", "${NEXUS_ARTIFACT_ID}")
+                        manager.createSummary('notepad.png').appendText('<b><a href="https://confluence.sberbank.ru/pages/viewpage.action?pageId=18142367984">Автоматическая таблица версий Provisioning</a></b>')
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            script {
+               if (params.SberChat) {
+                 BUILD_TRIGGER_BY = currentBuild.getBuildCauses()[0].shortDescription + " / " + currentBuild.getBuildCauses()[0].userId
+                 sberchatReport('OK', "DEPLOY - IFT\n${PRJ_NAME}\nVer: ${DISTR_NAME}\nDest srv IP: ${DEST_HOST}\n${BUILD_TRIGGER_BY}\nПродолжительность деплоя: ${currentBuild.durationString.replace(' and counting', '')}")
+               } 
+            }
+            script {
+               if (params.Deploy_to_Autotest) { 
+                  build job: "../Provisioning_CDL_Autotest/${PRJ_NAME}/", 
+                  parameters: [
+                    string(name: 'DISTR_NAME_VERSION', value:  "${DISTR_NAME_VERSION}"),
+                    string(name: 'SberChat', value:  "${SberChat}")
+                  ],
+                  wait: false
+                }
+
+               if (params.Deploy_to_DEV_SVPL) { 
+                  build job: "../Provisioning_CDL_SVPL/${PRJ_NAME}/", 
+                  parameters: [
+                    string(name: 'DISTR_NAME_VERSION', value:  "${DISTR_NAME_VERSION}"),
+                    string(name: 'SberChat', value:  "${SberChat}")
+                  ],
+                  wait: false
+            }
+        }
+        }
+        always {
+            println "This is the end"
+            cleanWs disableDeferredWipeout: true, deleteDirs: true //Очистка workspace Подробнее https://jenkins.io/doc/pipeline/steps/ws-cleanup/
+            }
+    }
+}
