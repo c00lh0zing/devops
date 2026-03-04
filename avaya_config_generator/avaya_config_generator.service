@@ -1,0 +1,17 @@
+[Unit]
+Description=Service avaya_config_generator
+After=jwt_auth.service
+After=templates_controller.service
+
+[Service]
+Type=simple
+Restart=on-failure
+KillMode=control-group
+ExecStart=/opt/provisioning/avaya_config_generator/bin/avaya_config_generator -c /opt/provisioning/avaya_config_generator/env/.env
+RestartSec=10s
+TimeoutSec=0
+LimitNOFILE=1617596
+LimitNOFILESoft=1617596
+
+[Install]
+WantedBy=default.target
