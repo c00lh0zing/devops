@@ -1,0 +1,14 @@
+[Unit]
+Description=Jwt Auth
+
+[Service]
+Type=simple
+Restart=on-failure
+KillMode=control-group
+ExecStart=/opt/provisioning/jwt_auth/bin/jwt_auth -c /opt/provisioning/jwt_auth/env/.env
+WorkingDirectory=/opt/provisioning/jwt_auth
+RestartSec=10s
+TimeoutSec=0
+
+[Install]
+WantedBy=default.target
