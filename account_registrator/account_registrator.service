@@ -1,0 +1,15 @@
+[Unit]
+Description=Service account_registrator
+After=jwt_auth.service
+After=templates_controller.service
+
+[Service]
+Type=simple
+Restart=on-failure
+KillMode=control-group
+ExecStart=/opt/provisioning/account_registrator/bin/account_registrator -c /opt/provisioning/account_registrator/env/.env -f /opt/provisioning/account_registrator/env/fio_exceptions.txt
+RestartSec=10s
+TimeoutSec=0
+
+[Install]
+WantedBy=default.target
