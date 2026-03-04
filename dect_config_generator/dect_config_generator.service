@@ -1,0 +1,13 @@
+[Unit]
+Description=Service dect_config_generator
+
+[Service]
+Type=simple
+Restart=on-failure
+KillMode=control-group
+ExecStart=/opt/provisioning/dect_config_generator/bin/dect_config_generator -c /opt/provisioning/dect_config_generator/env/.env
+RestartSec=10s
+TimeoutSec=0
+
+[Install]
+WantedBy=default.target
