@@ -1,0 +1,274 @@
+SYNGX_USER="syngxdevops"
+
+pipeline {
+    agent {
+        node {
+            label 'masterLin'
+        }
+    }
+
+    parameters {
+        string(name: 'RMCMD', defaultValue: 'id', description: "Выполнить команду на ноде. Пример: <b>sudo systemctl status syngx | journalctl -xe | cat /opt/syngx/conf/syngx.con")
+        choice(name: 'DEST_HOST', choices: ['10.119.121.116', '10.109.36.102'], description: "IP адрес ноды")
+        booleanParam(name: 'CFG01', defaultValue: false, description: '<b>[10.119.121.116] Disable - 10.119.121.44 </b>| Enable - 10.109.37.176')
+        booleanParam(name: 'CFG02', defaultValue: false, description: '<b>[10.119.121.116] Disable - 10.109.37.176 </b>| Enable - 10.119.121.44')
+        booleanParam(name: 'CFG03', defaultValue: false, description: '[10.119.121.116] Enable - 10.119.121.44 | Enable - 10.109.37.176')
+
+        booleanParam(name: 'CFG04', defaultValue: false, description: '<b>[10.109.36.102] Disable - 10.119.121.44 </b>| Enable - 10.109.37.176')
+        booleanParam(name: 'CFG05', defaultValue: false, description: '<b>[10.109.36.102] Disable - 10.109.37.176 </b>| Enable - 10.119.121.44')
+        booleanParam(name: 'CFG06', defaultValue: false, description: '[10.109.36.102] Enable - 10.119.121.44 | Enable - 10.109.37.176')
+    }
+
+    stages {
+
+        stage('Custom tasks') {
+            steps {
+              script {
+                        currentBuild.displayName = "${DEST_HOST}"
+                }
+                script{
+                    // Использование ссылочного креда с типом Vault SSH private key with signed public key Credential
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',          // ID ссылочного креда с типом Vault SSH private key with signed public key Credential
+                        privateKeyVar: 'SSH_PRIVATE_KEY',           // Переменная, где будет храниться путь к файлу со значением приватного ключа
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {  // Переменная, где будет хранится значение парольной фразы
+                 
+                        sshagent([]){
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+                            sh """
+                            ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'ip a'
+                            ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'ls -lan /opt/syngx/'
+                            ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'ls -lan /opt/syngx/conf'
+                            ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST '${RMCMD}'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy: CFG01') {
+            when {
+                expression { params.CFG01 }
+            }
+            steps {
+               script {
+                        currentBuild.displayName = "${DEST_HOST} CFG01"
+                }
+                script{
+                    // Использование ссылочного креда с типом Vault SSH private key with signed public key Credential
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',          // ID ссылочного креда с типом Vault SSH private key with signed public key Credential
+                        privateKeyVar: 'SSH_PRIVATE_KEY',           // Переменная, где будет храниться путь к файлу со значением приватного ключа
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {  // Переменная, где будет хранится значение парольной фразы
+                 
+                        sshagent([]){
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cat /opt/syngx/conf/syngx.conf'
+                                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cp /opt/syngx/conf/syngx.conf /opt/syngx/conf/syngx.conf_`date +"%Y%m%d_%H%M"` | true'
+                                ls -la
+                                scp -i $SSH_PRIVATE_KEY -o StrictHostKeyChecking=no ./syngx_cfg/cfg/CFG01/syngx.conf $SYNGX_USER@$DEST_HOST:/opt/syngx/conf/
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'sudo systemctl restart syngx'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy: CFG02') {
+            when {
+                expression { params.CFG02 }
+            }
+            steps {
+               script {
+                        currentBuild.displayName = "${DEST_HOST} CFG02"
+                }
+                script{
+                    // Использование ссылочного креда с типом Vault SSH private key with signed public key Credential
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',          // ID ссылочного креда с типом Vault SSH private key with signed public key Credential
+                        privateKeyVar: 'SSH_PRIVATE_KEY',           // Переменная, где будет храниться путь к файлу со значением приватного ключа
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {  // Переменная, где будет хранится значение парольной фразы
+                 
+                        sshagent([]){
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cat /opt/syngx/conf/syngx.conf'
+                                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cp /opt/syngx/conf/syngx.conf /opt/syngx/conf/syngx.conf_`date +"%Y%m%d_%H%M"` | true'
+                                ls -la
+                                scp -i $SSH_PRIVATE_KEY -o StrictHostKeyChecking=no ./syngx_cfg/cfg/CFG02/syngx.conf $SYNGX_USER@$DEST_HOST:/opt/syngx/conf/
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'sudo systemctl restart syngx'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy: CFG03') {
+            when {
+                expression { params.CFG03 }
+            }
+            steps {
+               script {
+                        currentBuild.displayName = "${DEST_HOST} CFG03"
+                }
+                script{
+                    // Использование ссылочного креда с типом Vault SSH private key with signed public key Credential
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',          // ID ссылочного креда с типом Vault SSH private key with signed public key Credential
+                        privateKeyVar: 'SSH_PRIVATE_KEY',           // Переменная, где будет храниться путь к файлу со значением приватного ключа
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {  // Переменная, где будет хранится значение парольной фразы
+                 
+                        sshagent([]){
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cat /opt/syngx/conf/syngx.conf'
+                                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cp /opt/syngx/conf/syngx.conf /opt/syngx/conf/syngx.conf_`date +"%Y%m%d_%H%M"` | true'
+                                ls -la
+                                scp -i $SSH_PRIVATE_KEY -o StrictHostKeyChecking=no ./syngx_cfg/cfg/CFG03/syngx.conf $SYNGX_USER@$DEST_HOST:/opt/syngx/conf/
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'sudo systemctl restart syngx'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy: CFG04') {
+            when {
+                expression { params.CFG04 }
+            }
+            steps {
+               script {
+                        currentBuild.displayName = "${DEST_HOST} CFG04"
+                }
+                script{
+                    // Использование ссылочного креда с типом Vault SSH private key with signed public key Credential
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',          // ID ссылочного креда с типом Vault SSH private key with signed public key Credential
+                        privateKeyVar: 'SSH_PRIVATE_KEY',           // Переменная, где будет храниться путь к файлу со значением приватного ключа
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {  // Переменная, где будет хранится значение парольной фразы
+                 
+                        sshagent([]){
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cat /opt/syngx/conf/syngx.conf'
+                                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cp /opt/syngx/conf/syngx.conf /opt/syngx/conf/syngx.conf_`date +"%Y%m%d_%H%M"` | true'
+                                ls -la
+                                scp -i $SSH_PRIVATE_KEY -o StrictHostKeyChecking=no ./syngx_cfg/cfg/CFG04/syngx.conf $SYNGX_USER@$DEST_HOST:/opt/syngx/conf/
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'sudo systemctl restart syngx'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy: CFG05') {
+            when {
+                expression { params.CFG05 }
+            }
+            steps {
+               script {
+                        currentBuild.displayName = "${DEST_HOST} CFG05"
+                }
+                script{
+                    // Использование ссылочного креда с типом Vault SSH private key with signed public key Credential
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',          // ID ссылочного креда с типом Vault SSH private key with signed public key Credential
+                        privateKeyVar: 'SSH_PRIVATE_KEY',           // Переменная, где будет храниться путь к файлу со значением приватного ключа
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {  // Переменная, где будет хранится значение парольной фразы
+                 
+                        sshagent([]){
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cat /opt/syngx/conf/syngx.conf'
+                                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cp /opt/syngx/conf/syngx.conf /opt/syngx/conf/syngx.conf_`date +"%Y%m%d_%H%M"` | true'
+                                ls -la
+                                scp -i $SSH_PRIVATE_KEY -o StrictHostKeyChecking=no ./syngx_cfg/cfg/CFG05/syngx.conf $SYNGX_USER@$DEST_HOST:/opt/syngx/conf/
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'sudo systemctl restart syngx'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy: CFG06') {
+            when {
+                expression { params.CFG06 }
+            }
+            steps {
+               script {
+                        currentBuild.displayName = "${DEST_HOST} CFG06"
+                }
+                script{
+                    // Использование ссылочного креда с типом Vault SSH private key with signed public key Credential
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',          // ID ссылочного креда с типом Vault SSH private key with signed public key Credential
+                        privateKeyVar: 'SSH_PRIVATE_KEY',           // Переменная, где будет храниться путь к файлу со значением приватного ключа
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {  // Переменная, где будет хранится значение парольной фразы
+                 
+                        sshagent([]){
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cat /opt/syngx/conf/syngx.conf'
+                                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'cp /opt/syngx/conf/syngx.conf /opt/syngx/conf/syngx.conf_`date +"%Y%m%d_%H%M"` | true'
+                                ls -la
+                                scp -i $SSH_PRIVATE_KEY -o StrictHostKeyChecking=no ./syngx_cfg/cfg/CFG06/syngx.conf $SYNGX_USER@$DEST_HOST:/opt/syngx/conf/
+                                ssh -o StrictHostKeyChecking=no -o CertificateFile=$SIGNED_SSH_PUBLIC_KEY -i $SSH_PRIVATE_KEY $SYNGX_USER@$DEST_HOST 'sudo systemctl restart syngx'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+
+    }
+    
+    post {
+        always {
+            println "This is the end"
+            cleanWs disableDeferredWipeout: true, deleteDirs: true //Очистка workspace Подробнее https://jenkins.io/doc/pipeline/steps/ws-cleanup/
+            }
+    }
+}
