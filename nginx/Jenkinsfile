@@ -21,6 +21,33 @@ pipeline {
 
     stages {
 
+        stage('Validate params') {
+            steps {
+                script {
+                    def allowedCfgByHost = [
+                        '10.119.121.116': ['CFG01', 'CFG02', 'CFG03'],
+                        '10.109.36.102' : ['CFG04', 'CFG05', 'CFG06']
+                    ]
+
+                    def selectedCfgFlags = ['CFG01', 'CFG02', 'CFG03', 'CFG04', 'CFG05', 'CFG06'].findAll { cfgName ->
+                        return params[cfgName]
+                    }
+
+                    def allowedCfgFlags = allowedCfgByHost[params.DEST_HOST] ?: []
+                    def invalidSelectedCfgFlags = selectedCfgFlags.findAll { cfgName ->
+                        return !allowedCfgFlags.contains(cfgName)
+                    }
+
+                    if (invalidSelectedCfgFlags) {
+                        error("Для DEST_HOST=${params.DEST_HOST} недопустимы флаги: ${invalidSelectedCfgFlags.join(', ')}. Разрешено: ${allowedCfgFlags.join(', ')}")
+                    }
+
+                    def selectedMode = selectedCfgFlags ? selectedCfgFlags.join(', ') : 'none'
+                    echo "Validate params: DEST_HOST=${params.DEST_HOST}, selected mode=${selectedMode}"
+                }
+            }
+        }
+
         stage('Custom tasks') {
             steps {
               script {
