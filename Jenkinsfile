@@ -24,6 +24,10 @@ pipeline {
 <b>drain</b> - эта нода останется активной, остальные будут помечены как down<br>
 <b>swap</b> - эта нода будет помечена как down, остальные будут возвращены в работу<br>
 <b>restore</b> - параметр игнорируется, все ноды будут активны''')
+
+        booleanParam(name: 'DRY_RUN', defaultValue: false,
+            description: '''Режим проверки без применения изменений.<br>
+Конфиг скачивается и модифицируется локально, но <b>не загружается</b> на балансировщик и <b>рестарт не выполняется</b>.''')
     }
 
     stages {
@@ -34,15 +38,20 @@ pipeline {
                     if (params.ACTION == '---') {
                         error("Необходимо выбрать действие (ACTION)")
                     }
-                    currentBuild.displayName = "#${BUILD_NUMBER} ${params.ACTION} [${params.KEEP_BACKEND}]"
-                    currentBuild.description = "Action: ${params.ACTION}, Backend: ${params.KEEP_BACKEND}"
+                    def dryLabel = params.DRY_RUN ? ' [DRY-RUN]' : ''
+                    currentBuild.displayName = "#${BUILD_NUMBER} ${params.ACTION} [${params.KEEP_BACKEND}]${dryLabel}"
+                    currentBuild.description = "Action: ${params.ACTION}, Backend: ${params.KEEP_BACKEND}, DRY_RUN: ${params.DRY_RUN}"
 
                     echo "=== Параметры запуска ==="
                     echo "ACTION:        ${params.ACTION}"
                     echo "KEEP_BACKEND:  ${params.KEEP_BACKEND}"
+                    echo "DRY_RUN:       ${params.DRY_RUN}"
                     echo "Балансировщики: ${BALANCERS.join(', ')}"
                     echo "Бекенды:        ${BACKENDS.join(', ')}"
                     echo "========================="
+                    if (params.DRY_RUN) {
+                        echo "*** РЕЖИМ DRY-RUN: изменения НЕ будут применены на балансировщиках ***"
+                    }
                 }
             }
         }
@@ -64,7 +73,7 @@ pipeline {
                             '''
 
                             for (balancer in BALANCERS) {
-                                processBalancer(balancer, params.ACTION, params.KEEP_BACKEND, BACKENDS)
+                                processBalancer(balancer, params.ACTION, params.KEEP_BACKEND, BACKENDS, params.DRY_RUN)
                             }
                         }
                     }
@@ -86,13 +95,14 @@ pipeline {
     }
 }
 
-def processBalancer(String balancer, String action, String keepBackend, List backends) {
+def processBalancer(String balancer, String action, String keepBackend, List backends, Boolean dryRun) {
     def sshOpts = "-o StrictHostKeyChecking=no -o CertificateFile=\$SIGNED_SSH_PUBLIC_KEY -i \$SSH_PRIVATE_KEY"
     def scpOpts = "-o StrictHostKeyChecking=no -i \$SSH_PRIVATE_KEY"
     def remote  = "${SYNGX_USER}@${balancer}"
     def localConf = "syngx_${balancer}.conf"
+    def modeLabel = dryRun ? ' [DRY-RUN]' : ''
 
-    echo "========== Обработка балансировщика: ${balancer} =========="
+    echo "========== Обработка балансировщика: ${balancer}${modeLabel} =========="
 
     // 1. Скачать текущий конфиг с ноды балансировщика
     sh "scp ${scpOpts} ${remote}:${SYNGX_CONF} ${localConf}"
@@ -101,15 +111,21 @@ def processBalancer(String balancer, String action, String keepBackend, List bac
     echo "--- Текущее состояние upstream на ${balancer} ---"
     sh "grep -nE 'server.*(${backends.join('|')})' ${localConf} || echo 'Бекенд-серверы не найдены в конфиге'"
 
-    // 3. Создать бекап конфига на удалённом сервере
-    sh "ssh ${sshOpts} ${remote} 'cp ${SYNGX_CONF} ${SYNGX_CONF}.bak'"
-
-    // 4. Модифицировать конфиг (добавить/убрать down)
+    // 3. Модифицировать конфиг локально (добавить/убрать down)
     modifyConfig(localConf, action, keepBackend, backends)
 
-    // 5. Показать изменённое состояние upstream
+    // 4. Показать изменённое состояние upstream
     echo "--- Состояние upstream после изменений для ${balancer} ---"
     sh "grep -nE 'server.*(${backends.join('|')})' ${localConf} || echo 'Бекенд-серверы не найдены в конфиге'"
+
+    if (dryRun) {
+        echo "[DRY-RUN] Пропуск: загрузка конфига, проверка и рестарт на ${balancer}"
+        echo "========== Балансировщик ${balancer} обработан [DRY-RUN] =========="
+        return
+    }
+
+    // 5. Создать бекап конфига на удалённом сервере
+    sh "ssh ${sshOpts} ${remote} 'cp ${SYNGX_CONF} ${SYNGX_CONF}.bak'"
 
     // 6. Загрузить изменённый конфиг обратно на балансировщик
     sh "scp ${scpOpts} ${localConf} ${remote}:${SYNGX_CONF}"
