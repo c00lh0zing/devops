@@ -1,0 +1,112 @@
+SYNGX_USER = "syngxdevops"
+
+def BALANCERS = ['10.109.36.102', '10.119.121.116', '10.109.3.194', '10.109.200.218', '10.119.110.225']
+
+pipeline {
+    agent {
+        node {
+            label 'masterLin'
+        }
+    }
+
+    parameters {
+        choice(name: 'TARGET', choices: ['---', 'ALL', '10.109.36.102', '10.119.121.116', '10.109.3.194', '10.109.200.218', '10.119.110.225'],
+            description: '''Целевой балансировщик:<br>
+<b>ALL</b> - выполнить команду на всех балансировщиках последовательно<br>
+Или выберите конкретную ноду.''')
+
+        string(name: 'COMMAND', defaultValue: '',
+            description: 'Команда для выполнения на удалённом хосте.')
+
+        booleanParam(name: 'DRY_RUN', defaultValue: true,
+            description: '''Режим проверки без выполнения.<br>
+Показывает какая команда будет выполнена и на каком хосте, но <b>не выполняет</b> её.''')
+    }
+
+    stages {
+
+        stage('Validate') {
+            steps {
+                script {
+                    if (params.TARGET == '---') {
+                        error("Необходимо выбрать целевой балансировщик (TARGET)")
+                    }
+                    if (!params.COMMAND?.trim()) {
+                        error("Необходимо указать команду для выполнения (COMMAND)")
+                    }
+
+                    def dryLabel = params.DRY_RUN ? ' [DRY-RUN]' : ''
+                    currentBuild.displayName = "#${BUILD_NUMBER} ${params.TARGET}${dryLabel}"
+                    currentBuild.description = "Target: ${params.TARGET}, Command: ${params.COMMAND}, DRY_RUN: ${params.DRY_RUN}"
+
+                    echo "=== Параметры запуска ==="
+                    echo "TARGET:   ${params.TARGET}"
+                    echo "COMMAND:  ${params.COMMAND}"
+                    echo "DRY_RUN:  ${params.DRY_RUN}"
+                    echo "========================="
+                    if (params.DRY_RUN) {
+                        echo "*** РЕЖИМ DRY-RUN: команда НЕ будет выполнена ***"
+                    }
+                }
+            }
+        }
+
+        stage('Execute') {
+            steps {
+                script {
+                    withCredentials([[$class: 'VaultSignedSSHKeyCredentialBinding',
+                        credentialsId: 'ssh_syngxdevops2',
+                        privateKeyVar: 'SSH_PRIVATE_KEY',
+                        passphraseVar: 'SSH_PRIVATE_KEY_PASS']]) {
+
+                        sshagent([]) {
+                            sh '''
+                            set +x
+                            echo -e "#!/bin/sh\necho \\$SSH_PRIVATE_KEY_PASS" > send_ps.sh
+                            chmod +x ./send_ps.sh
+                            DISPLAY=1 SSH_ASKPASS="./send_ps.sh" ssh-add $SSH_PRIVATE_KEY < /dev/null
+                            '''
+
+                            def targets = (params.TARGET == 'ALL') ? BALANCERS : [params.TARGET]
+
+                            for (host in targets) {
+                                executeRemote(host, params.COMMAND, params.DRY_RUN)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Выполнение завершено успешно. Target: ${params.TARGET}, Command: ${params.COMMAND}"
+        }
+        failure {
+            echo "ОШИБКА! Проверьте логи выше."
+        }
+        always {
+            cleanWs disableDeferredWipeout: true, deleteDirs: true
+        }
+    }
+}
+
+def executeRemote(String host, String command, Boolean dryRun) {
+    def sshOpts = "-o StrictHostKeyChecking=no -o CertificateFile=\$SIGNED_SSH_PUBLIC_KEY -i \$SSH_PRIVATE_KEY"
+    def remote  = "${SYNGX_USER}@${host}"
+    def modeLabel = dryRun ? ' [DRY-RUN]' : ''
+
+    echo "========== ${host}${modeLabel} =========="
+    echo "Команда: ${command}"
+
+    if (dryRun) {
+        echo "[DRY-RUN] ssh ${remote} '${command}'"
+        echo "========== ${host} пропущен [DRY-RUN] =========="
+        return
+    }
+
+    sh "ssh ${sshOpts} ${remote} '${command}'"
+
+    echo "========== ${host} выполнено =========="
+}
