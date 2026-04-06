@@ -28,6 +28,11 @@ pipeline {
         booleanParam(name: 'DRY_RUN', defaultValue: false,
             description: '''Режим проверки без применения изменений.<br>
 Конфиг скачивается и модифицируется локально, но <b>не загружается</b> на балансировщик и <b>рестарт не выполняется</b>.''')
+
+        booleanParam(name: 'CHECK_CONFIG', defaultValue: true,
+            description: '''Проверка конфигурации перед рестартом.<br>
+Если включено — после загрузки конфига выполняется <b>syngx -t</b>. При ошибке конфиг откатывается из бекапа.<br>
+Если выключено — рестарт выполняется сразу после загрузки конфига, без проверки.''')
     }
 
     stages {
@@ -39,18 +44,23 @@ pipeline {
                         error("Необходимо выбрать действие (ACTION)")
                     }
                     def dryLabel = params.DRY_RUN ? ' [DRY-RUN]' : ''
-                    currentBuild.displayName = "#${BUILD_NUMBER} ${params.ACTION} [${params.KEEP_BACKEND}]${dryLabel}"
-                    currentBuild.description = "Action: ${params.ACTION}, Backend: ${params.KEEP_BACKEND}, DRY_RUN: ${params.DRY_RUN}"
+                    def checkLabel = params.CHECK_CONFIG ? '' : ' [NO-CHECK]'
+                    currentBuild.displayName = "#${BUILD_NUMBER} ${params.ACTION} [${params.KEEP_BACKEND}]${dryLabel}${checkLabel}"
+                    currentBuild.description = "Action: ${params.ACTION}, Backend: ${params.KEEP_BACKEND}, DRY_RUN: ${params.DRY_RUN}, CHECK_CONFIG: ${params.CHECK_CONFIG}"
 
                     echo "=== Параметры запуска ==="
                     echo "ACTION:        ${params.ACTION}"
                     echo "KEEP_BACKEND:  ${params.KEEP_BACKEND}"
                     echo "DRY_RUN:       ${params.DRY_RUN}"
+                    echo "CHECK_CONFIG:  ${params.CHECK_CONFIG}"
                     echo "Балансировщики: ${BALANCERS.join(', ')}"
                     echo "Бекенды:        ${BACKENDS.join(', ')}"
                     echo "========================="
                     if (params.DRY_RUN) {
                         echo "*** РЕЖИМ DRY-RUN: изменения НЕ будут применены на балансировщиках ***"
+                    }
+                    if (!params.CHECK_CONFIG) {
+                        echo "*** ПРОВЕРКА КОНФИГА ОТКЛЮЧЕНА: syngx -t не будет выполнена ***"
                     }
                 }
             }
@@ -73,7 +83,7 @@ pipeline {
                             '''
 
                             for (balancer in BALANCERS) {
-                                processBalancer(balancer, params.ACTION, params.KEEP_BACKEND, BACKENDS, params.DRY_RUN)
+                                processBalancer(balancer, params.ACTION, params.KEEP_BACKEND, BACKENDS, params.DRY_RUN, params.CHECK_CONFIG)
                             }
                         }
                     }
@@ -95,7 +105,7 @@ pipeline {
     }
 }
 
-def processBalancer(String balancer, String action, String keepBackend, List backends, Boolean dryRun) {
+def processBalancer(String balancer, String action, String keepBackend, List backends, Boolean dryRun, Boolean checkConfig) {
     def sshOpts = "-o StrictHostKeyChecking=no -o CertificateFile=\$SIGNED_SSH_PUBLIC_KEY -i \$SSH_PRIVATE_KEY"
     def scpOpts = "-o StrictHostKeyChecking=no -i \$SSH_PRIVATE_KEY"
     def remote  = "${SYNGX_USER}@${balancer}"
@@ -130,16 +140,20 @@ def processBalancer(String balancer, String action, String keepBackend, List bac
     // 6. Загрузить изменённый конфиг обратно на балансировщик
     sh "scp ${scpOpts} ${localConf} ${remote}:${SYNGX_CONF}"
 
-    // 7. Проверить валидность конфига на балансировщике
-    def testResult = sh(script: "ssh ${sshOpts} ${remote} 'sudo ${SYNGX_BIN} -t'", returnStatus: true)
+    // 7. Проверить валидность конфига на балансировщике (опционально)
+    if (checkConfig) {
+        def testResult = sh(script: "ssh ${sshOpts} ${remote} 'sudo ${SYNGX_BIN} -t'", returnStatus: true)
 
-    if (testResult != 0) {
-        echo "ОШИБКА: Проверка конфига не пройдена на ${balancer}! Восстанавливаем бекап..."
-        sh "ssh ${sshOpts} ${remote} 'cp ${SYNGX_CONF}.bak ${SYNGX_CONF}'"
-        error("Проверка конфигурации syngx не пройдена на ${balancer}. Бекап восстановлен. Обработка остановлена.")
+        if (testResult != 0) {
+            echo "ОШИБКА: Проверка конфига не пройдена на ${balancer}! Восстанавливаем бекап..."
+            sh "ssh ${sshOpts} ${remote} 'cp ${SYNGX_CONF}.bak ${SYNGX_CONF}'"
+            error("Проверка конфигурации syngx не пройдена на ${balancer}. Бекап восстановлен. Обработка остановлена.")
+        }
+    } else {
+        echo "[NO-CHECK] Пропуск проверки конфига (syngx -t) на ${balancer}"
     }
 
-    // 8. Рестарт syngx после успешной проверки
+    // 8. Рестарт syngx
     sh "ssh ${sshOpts} ${remote} 'sudo systemctl restart syngx'"
 
     echo "========== Балансировщик ${balancer} обработан успешно =========="
