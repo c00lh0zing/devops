@@ -1,0 +1,25 @@
++ ssh -o StrictHostKeyChecking=no -o CertificateFile=**** -i **** syngxdevops@10.71.249.154 '/usr/sbin/syngx -t'
+|-----------------------------------------------------------------|
+| This system is for the use of authorized users only.            |
+| Individuals using this computer system without authority, or in |
+| excess of their authority, are subject to having all of their   |
+| activities on this system monitored and recorded by system      |
+| personnel.                                                      |
+|                                                                 |
+| In the course of monitoring individuals improperly using this   |
+| system, or in the course of system maintenance, the activities  |
+| of authorized users may also be monitored.                      |
+|                                                                 |
+| Anyone using this system expressly consents to such monitoring  |
+| and is advised that if such monitoring reveals possible         |
+| evidence of criminal activity, system personnel may provide the |
+| evidence of such monitoring to law enforcement officials.       |
+|-----------------------------------------------------------------|
+syngx: [alert] could not open error log file: open() "/opt/syngx/logs/error.log" failed (13: Permission denied)
+2026/04/06 17:30:45 [warn] 3712248#3712248: the "user" directive makes sense only if the master process runs with super-user privileges, ignored in /opt/syngx/conf/syngx.conf:5
+2026/04/06 17:30:45 [warn] 3712248#3712248: conflicting server name "localhost" on 0.0.0.0:8432, ignored
+syngx: the configuration file /opt/syngx/conf/syngx.conf syntax is ok
+2026/04/06 17:30:45 [emerg] 3712248#3712248: open() "/opt/syngx/logs/error.log" failed (13: Permission denied)
+syngx: configuration file /opt/syngx/conf/syngx.conf test failed
+[Pipeline] echo
+ОШИБКА: Проверка конфига не пройдена на 10.71.249.154! Восстанавливаем бекап...
