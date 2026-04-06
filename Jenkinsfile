@@ -1,6 +1,6 @@
 SYNGX_USER = "syngxdevops"
 SYNGX_CONF = "/opt/syngx/conf/syngx.conf"
-SYNGX_BIN  = "/opt/syngx/sbin/syngx"
+SYNGX_BIN  = "/usr/sbin/syngx"
 
 def BALANCERS = ['10.109.36.102', '10.119.121.116', '10.109.3.194', '10.109.200.218', '10.119.110.225']
 def BACKENDS  = ['10.119.121.44', '10.109.37.176', '30.88.36.249', '30.88.81.1']
@@ -143,7 +143,7 @@ def processBalancer(String balancer, String action, String keepBackend, List bac
 
     // 7. Проверить валидность конфига на балансировщике (опционально)
     if (checkConfig) {
-        def testResult = sh(script: "ssh ${sshOpts} ${remote} 'sudo ${SYNGX_BIN} -t'", returnStatus: true)
+        def testResult = sh(script: "ssh ${sshOpts} ${remote} '${SYNGX_BIN} -t'", returnStatus: true)
 
         if (testResult != 0) {
             echo "ОШИБКА: Проверка конфига не пройдена на ${balancer}! Восстанавливаем бекап..."
