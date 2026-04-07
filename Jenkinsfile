@@ -143,7 +143,7 @@ def processBalancer(String balancer, String action, String keepBackend, List bac
 
     // 7. Проверить валидность конфига на балансировщике (опционально)
     if (checkConfig) {
-        def testResult = sh(script: "ssh ${sshOpts} ${remote} '${SYNGX_BIN} -t'", returnStatus: true)
+        def testResult = sh(script: "ssh ${sshOpts} ${remote} 'sudo -u syngx ${SYNGX_BIN} -t'", returnStatus: true)
 
         if (testResult != 0) {
             echo "ОШИБКА: Проверка конфига не пройдена на ${balancer}! Восстанавливаем бекап..."
